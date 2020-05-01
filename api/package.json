@@ -1,0 +1,10 @@
+{
+    "name": "smarthydroponicsserver",
+    "version": "1.0.0",
+    "description": "server for testing",
+    "main": "app.js",
+    "dependencies": {
+        "body-parser": "^1.19.0",
+        "express": "^4.17.1"
+    }
+}

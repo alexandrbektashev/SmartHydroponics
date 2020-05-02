@@ -30,6 +30,12 @@ const int sensor1Bound = 1000;
 const int sensor2Bound = 2000;
 const int sensor3Bound = 256;
 
+bool isdevice1Switched = false;
+bool isdevice2Switched = false;
+bool isdevice3Switched = false;
+
+bool isAutomatic = true;
+
 String SendHTML(u16_t sensor1, u16_t sensor2, u16_t sensor3)
 {
   String ptr = "<!DOCTYPE html> <html>\n";
@@ -57,16 +63,6 @@ String SendHTML(u16_t sensor1, u16_t sensor2, u16_t sensor3)
   ptr += "<p>Sensor 3 ";
   ptr += sensor3;
   ptr += "</p>\n";
-  // if(led1stat)
-  // {ptr +="<p>LED1 Status: ON</p><a class=\"button button-off\" href=\"/led1off\">OFF</a>\n";}
-  // else
-  // {ptr +="<p>LED1 Status: OFF</p><a class=\"button button-on\" href=\"/led1on\">ON</a>\n";}
-
-  // if(led2stat)
-  // {ptr +="<p>LED2 Status: ON</p><a class=\"button button-off\" href=\"/led2off\">OFF</a>\n";}
-  // else
-  // {ptr +="<p>LED2 Status: OFF</p><a class=\"button button-on\" href=\"/led2on\">ON</a>\n";}
-
   ptr += "</body>\n";
   ptr += "</html>\n";
   return ptr;
@@ -115,6 +111,48 @@ void SendJSON(String host, String url, String json)
   http.end();
 }
 
+void ChangeDeviceState(u16_t device, u16_t newState, String reason)
+{
+  String json = String("{\"Device\" : \"") + device + "\"," +
+                "\"Reason\":\"" + reason + "\"," +
+                "\"PreviosState\" : \"" + digitalRead(device) + "\"," +
+                "\"NewState\" : \"" + newState + "\"}";
+  SendJSON(host, url_save, json);
+  digitalWrite(device, newState);
+}
+void handle_ManualChange()
+{
+  isAutomatic = false;
+  for (int i = 0; i < server.args(); i++)
+  {
+    if (server.argName(i) == "dev1")
+    {
+      if (server.arg(i) == "0")
+        ChangeDeviceState(LED1_OUT, LOW, "Changed manually via GET");
+      else if (server.arg(i) == "1")
+        ChangeDeviceState(LED1_OUT, HIGH, "Changed manually via GET");
+    }
+    else if (server.argName(i) == "dev2")
+    {
+      if (server.arg(i) == "0")
+        ChangeDeviceState(LED2_OUT, LOW, "Changed manually via GET");
+      else if (server.arg(i) == "1")
+        ChangeDeviceState(LED2_OUT, HIGH, "Changed manually via GET");
+    }
+    else if (server.argName(i) == "dev3")
+    {
+      if (server.arg(i) == "0")
+        ChangeDeviceState(LED3_OUT, LOW, "Changed manually via GET");
+      else if (server.arg(i) == "1")
+        ChangeDeviceState(LED3_OUT, HIGH, "Changed manually via GET");
+    }
+    else if (server.argName(i) == "automatic")
+    {
+      if (server.arg(i) == "true") isAutomatic = true;
+    }
+  }
+  server.send(200, "text/plain", "Done!");
+}
 void loop()
 {
   server.handleClient();
@@ -123,23 +161,44 @@ void loop()
   int s2 = analogRead(SENSOR_2);
   int s3 = analogRead(SENSOR_3);
 
-  if (s1 > sensor1Bound)
-    digitalWrite(LED1_OUT, HIGH);
-  else
-    digitalWrite(LED1_OUT, LOW);
+  if (isAutomatic)
+  {
 
-  if (s2 > sensor2Bound)
-    digitalWrite(LED2_OUT, HIGH);
-  else
-    digitalWrite(LED2_OUT, LOW);
+    if ((s1 > sensor1Bound) && !isdevice1Switched)
+    {
+      ChangeDeviceState(LED1_OUT, HIGH, "Higher temp bound is reached");
+      isdevice1Switched = true;
+    }
 
-  if (s3 > sensor3Bound)
-    digitalWrite(LED3_OUT, HIGH);
-  else
-    digitalWrite(LED3_OUT, LOW);
-  delay(100);
-  //SendJSON(host, url_save, "");
-  //delay(1000);
+    else if ((s1 < sensor1Bound) && isdevice1Switched)
+    {
+      ChangeDeviceState(LED1_OUT, LOW, "Lower temp bound is reached");
+      isdevice1Switched = false;
+    }
+    if ((s2 > sensor2Bound) && !isdevice2Switched)
+    {
+      ChangeDeviceState(LED2_OUT, HIGH, "Higher moist bound is reached");
+      isdevice2Switched = true;
+    }
+
+    else if ((s2 < sensor2Bound) && isdevice2Switched)
+    {
+      ChangeDeviceState(LED2_OUT, LOW, "Lower moist bound is reached");
+      isdevice2Switched = false;
+    }
+    if ((s3 > sensor3Bound) && !isdevice3Switched)
+    {
+      ChangeDeviceState(LED3_OUT, HIGH, "Higher brightness bound is reached");
+      isdevice3Switched = true;
+    }
+
+    else if ((s3 < sensor3Bound) && isdevice3Switched)
+    {
+      ChangeDeviceState(LED3_OUT, LOW, "Lower brightness bound is reached");
+      isdevice3Switched = false;
+    }
+    delay(1000);
+  }
 }
 
 void setup()
@@ -167,7 +226,39 @@ void setup()
   Serial.println(WiFi.localIP());
 
   server.on("/", handle_OnConnect);
+  server.on("/setState", handle_ManualChange);
+
   server.onNotFound(handle_NotFound);
   server.begin();
   Serial.println("HTTP server started");
+
+  int s1 = analogRead(SENSOR_1);
+  int s2 = analogRead(SENSOR_2);
+  int s3 = analogRead(SENSOR_3);
+
+  if (s1 > sensor1Bound)
+  {
+    ChangeDeviceState(LED1_OUT, HIGH, "Initial change");
+    isdevice1Switched = true;
+  }
+  if (s2 > sensor2Bound)
+  {
+    ChangeDeviceState(LED2_OUT, HIGH, "Initial change");
+    isdevice2Switched = true;
+  }
+  if (s3 > sensor3Bound)
+  {
+    ChangeDeviceState(LED3_OUT, HIGH, "Initial change");
+    isdevice3Switched = true;
+  }
+  String reason = "Initial setup";
+
+  String json = String("{\"Reason\":\"") + reason + "\"," +
+                "\"Temp\" : \"" + s1 + "\"," +
+                "\"Temp\" : \"" + s2 + "\"," +
+                "\"Brightness\" : \"" + s3 + "\"," +
+                "\"Device1\" : \"" + isdevice1Switched + "\"," +
+                "\"Device2\" : \"" + isdevice2Switched + "\"," +
+                "\"Device3\" : \"" + isdevice3Switched + "\"}";
+  SendJSON(host, url_save, json);
 }
